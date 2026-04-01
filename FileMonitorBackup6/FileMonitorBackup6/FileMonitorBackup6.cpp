@@ -1,8 +1,8 @@
-<<<<<<< HEAD
 ﻿// ----------------------------------------------------------
 // 
 // Developed by: Dr. Edward Amoruso
 // University of Central Florida
+// April 1st, 2026
 // 
 // ----------------------------------------------------------
 
@@ -10,16 +10,6 @@
 #define _UNICODE
 #define WIN32_LEAN_AND_MEAN
 #define SOFTWARE_VERSION    7.9
-=======
-﻿// FileMonitorBackup6.cpp
-//
-// Patched: Asynchronous monitoring, structure checks, white-list,
-// entropy probes, hardened/hidden backup repo with GUID names + 
-// manifest, JSON logging.
-//
-// Build: /std:c++17 ; Link: Ole32.lib; Advapi32.lib; Aclapi.lib;
-//       Shlwapi.lib; Shell32.lib
->>>>>>> b8978569a7f1ec61f96c44f07beb82d600692e5c
 
 #include <windows.h>
 #include <aclapi.h>
@@ -607,7 +597,9 @@ bool IsAccessedByWhitelistedApp(const wstring& filename)
     return false;
 }
 
-// Enhanced process identification
+//
+// Original Enhanced process identification
+// 
 DWORD FindProcessID(const wstring& filename)
 {
     // Attempt to find the actual process ID accessing the specific file
@@ -708,6 +700,95 @@ bool HighEntropy(const wstring& filePath)
 
     return entropyValue >= threshold;
 }
+# if 1
+//
+// Spot Entropy Sampling Engine
+//
+static constexpr size_t ENTROPY_WINDOW = 4096;
+static constexpr int ENTROPY_PROBES = 3;
+
+// Compute deterministic probe offsets based on file size
+vector<uint64_t> ComputeEntropyOffsets(uint64_t fileSize)
+{
+    vector<uint64_t> offsets;
+
+    if (fileSize <= ENTROPY_WINDOW)
+    {
+        offsets.push_back(0);
+        return offsets;
+    }
+
+    uint64_t maxOffset = fileSize - ENTROPY_WINDOW;
+
+    // Deterministic spacing (¼, ½, ¾ of file)
+    offsets.push_back(maxOffset / 4);
+    offsets.push_back(maxOffset / 2);
+    offsets.push_back((maxOffset * 3) / 4);
+
+    return offsets;
+}
+
+// Spot entropy sampler
+bool SpotEntropySuspicious(const wstring& filePath)
+{
+    LARGE_INTEGER size{};
+    HANDLE h = CreateFileW(
+        filePath.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+
+    if (!GetFileSizeEx(h, &size))
+    {
+        CloseHandle(h);
+        return false;
+    }
+
+    CloseHandle(h);
+
+    uint64_t fileSize = static_cast<uint64_t>(size.QuadPart);
+    if (fileSize < ENTROPY_WINDOW * 2)
+        return false; // Too small for meaningful spot checks
+
+    auto offsets = ComputeEntropyOffsets(fileSize);
+
+    double threshold = GENERAL_ENTROPY_VALUE;
+
+    // File-type specific thresholds
+    if (IsWordFile(filePath)) threshold = DOCX_ENTROPY_VALUE;
+    else if (IsExcelFile(filePath)) threshold = XLSX_ENTROPY_VALUE;
+    else if (IsPdfFile(filePath)) threshold = PDF_ENTROPY_VALUE;
+    else if (IsJpgFile(filePath)) threshold = JPG_ENTROPY_VALUE;
+
+    int suspicious = 0;
+
+    for (uint64_t off : offsets)
+    {
+        vector<uint8_t> buf;
+        if (!ReadRange(filePath, off, ENTROPY_WINDOW, buf))
+            continue;
+
+        double e = Entropy(buf.data(), buf.size());
+
+        wcout << L"[DEBUG] Spot entropy @" << off
+            << L": " << e << L" (threshold: "
+            << threshold << L")\n";
+
+        if (e >= threshold)
+            suspicious++;
+    }
+
+    // Require majority of probes to trip
+    return suspicious >= 2;
+}
+#endif
 
 // Enhanced tamper detection that checks timestamp consistency
 bool IsBackupTampered(const wstring& backupPath, const wstring& originalPath)
@@ -1007,9 +1088,9 @@ inline bool WriteChunkWithRetry(HANDLE hFile, const uint8_t* buf, DWORD bytesToW
     return false;                  // exhausted retries
 }
 
-// ------------------------------------------------------------
+// 
 //  Backup routine that prefixes a custom magic number
-// ------------------------------------------------------------
+//
 bool CreateBackupWithMagic(const wstring& source, const wstring& backupDir)
 {
     // Build backup file name using GUID
@@ -1131,87 +1212,8 @@ bool BackupHasValidMagic(const wstring& backupPath, FileKind& outKind)
 
 bool IsElevated()
 {
-<<<<<<< HEAD
     HANDLE hToken = nullptr;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken))
-=======
-    // Lowercase form of the path
-    wstring t = targetPath;
-    transform(t.begin(), t.end(), t.begin(), towlower);
-
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) return L"";
-
-    PROCESSENTRY32W pe{};
-    pe.dwSize = sizeof(pe);
-    if (!Process32FirstW(snap, &pe)) {
-        CloseHandle(snap);
-        return L"";
-    }
-    do {
-        HANDLE hProc = OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION,
-            FALSE,
-            pe.th32ProcessID);
-        if (hProc) {
-            wchar_t img[MAX_PATH];
-            DWORD sz = MAX_PATH;
-            if (QueryFullProcessImageNameW(hProc, 0, img, &sz)) {
-                wstring low = img;
-                transform(low.begin(), low.end(), low.begin(), towlower);
-
-                // Heuristic: check if the process path ends with the file's directory
-                size_t pos = low.find(t.substr(0, t.find_last_of(L'\\')));
-                if (pos != wstring::npos && 
-                    pos + t.substr(0, t.find_last_of(L'\\')).length() == low.length()) {
-                    CloseHandle(hProc);
-                    CloseHandle(snap);
-                    return wstring(pe.szExeFile);
-                }
-            }
-            CloseHandle(hProc);
-        }
-    } while (Process32NextW(snap, &pe));
-    CloseHandle(snap);
-    return L"";
-}
-
-// ---------------------------------------------------------------------
-//  File‑type detection (magic numbers)
-// ---------------------------------------------------------------------
-bool StartsWith(const vector<uint8_t>& b, initializer_list<uint8_t> sig)
-{
-    if (b.size() < sig.size()) return false;
-    size_t i = 0;
-    for (auto v : sig) if (b[i++] != v) return false;
-    return true;
-}
-
-bool CheckJPEG(const wstring& path)
-{
-    vector<uint8_t> head;
-    if (!ReadExactRange(path, 0, 12, head)) return false;
-    // FF D8 FF and next marker either E0 (JFIF) or E1 (EXIF)
-    return StartsWith(head, { 0xFF, 0xD8, 0xFF }) &&
-        (head[3] == 0xE0 || head[3] == 0xE1);
-}
-
-bool CheckGIF(const wstring& path)
-{
-    vector<uint8_t> head;
-    if (!ReadExactRange(path, 0, 6, head)) return false;
-    return StartsWith(head, { 'G','I','F','8','7','a' }) ||
-        StartsWith(head, { 'G','I','F','8','9','a' });
-}
-
-bool CheckPDF(const wstring& path)
-{
-    vector<uint8_t> head;
-    if (!ReadExactRange(path, 0, 8, head)) return false;
-    if (!(head.size() >= 5 &&
-        head[0] == '%' && head[1] == 'P' && head[2] == 'D' &&
-        head[3] == 'F' && head[4] == '-'))
->>>>>>> b8978569a7f1ec61f96c44f07beb82d600692e5c
         return false;
 
     TOKEN_ELEVATION elevation{};
@@ -1386,13 +1388,12 @@ int wmain()
                     {
                         // Non-whitelisted applications go through entropy check
                         wcout << L"[INFO] Performing entropy check on file: " << name << L"\n";
-                        if (HighEntropy(full))
+                        if (SpotEntropySuspicious(full)) 
                         {
-                            // File has high entropy (likely encrypted or compressed)
-                            AppendJson(log, "{\"event\":\"alert\",\"file\":\"" +
-                                ToUtf8(full) + "\",\"reason\":\"high_entropy\"}");
-                            wcout << L"[ALERT] " << name << L" (high entropy)\n";
-                        }
+                            AppendJson(log, "{ \"event\":\"alert\", "        "\"file\":\"" + ToUtf8(full) +
+                                "\", \"reason\":\"spot_entropy\" }");    
+                            wcout << L"[ALERT] " 
+                                << name << L" (spot entropy anomaly)\n"; }
                         else
                         {
                             if (CreateBackupWithMagic(full, backupDir))
@@ -1406,7 +1407,6 @@ int wmain()
                                 DWORD error = GetLastError();
                                 AppendJson(log, "{\"event\":\"failed\",\"file\":\"" +
                                     ToUtf8(full) + "\",\"whitelisted\":false}");
-                                wcout << L"[BACKUP] " << name << L"\n";
                                 wcout << L"[ERROR] Failed to backup " << name << L" (Error: " << error << L")\n";
                             }
                         }
