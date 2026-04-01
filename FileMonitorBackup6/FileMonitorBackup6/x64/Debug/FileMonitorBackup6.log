@@ -1,0 +1,10 @@
+﻿  FileMonitorBackup6.cpp
+X:\PHD-Research-All\PHD-Research-4 (RansomWare)\VisualStudio\FileMonitorBackup6\FileMonitorBackup6\FileMonitorBackup6.cpp(8,9): warning C4005: 'UNICODE': macro redefinition
+      X:\PHD-Research-All\PHD-Research-4 (RansomWare)\VisualStudio\FileMonitorBackup6\FileMonitorBackup6\FileMonitorBackup6.cpp(8,9):
+      'UNICODE' previously declared on the command line
+  
+X:\PHD-Research-All\PHD-Research-4 (RansomWare)\VisualStudio\FileMonitorBackup6\FileMonitorBackup6\FileMonitorBackup6.cpp(9,9): warning C4005: '_UNICODE': macro redefinition
+      X:\PHD-Research-All\PHD-Research-4 (RansomWare)\VisualStudio\FileMonitorBackup6\FileMonitorBackup6\FileMonitorBackup6.cpp(9,9):
+      '_UNICODE' previously declared on the command line
+  
+  FileMonitorBackup6.vcxproj -> X:\PHD-Research-All\PHD-Research-4 (RansomWare)\VisualStudio\FileMonitorBackup6\x64\Debug\FileMonitorBackup6.exe
